@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>MediKiosk — AI Clinical History Assistant</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <div id="app">
+    <!--
+      This whole page is just one shell. The three "screens" (mode
+      select, question flow, summary) are not separate HTML pages --
+      they're built by JavaScript and dropped into the empty <main>
+      below. Look at static/js/app.js to see how.
+    -->
+    <header class="topbar">
+      <div class="brand">🩺 MediKiosk</div>
+      <button id="langToggle" class="lang-toggle" type="button">हिन्दी</button>
+    </header>
+    <main id="screen" class="screen"></main>
+  </div>
+
+  <!-- questions.js must load BEFORE app.js, since app.js uses the
+       FLOWS object that questions.js defines. -->
+  <script src="{{ url_for('static', filename='js/questions.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
