@@ -13,15 +13,35 @@ WHAT THIS FILE DOES (read this if Flask is new to you):
   prescription image (OCR) and one to generate a sample FHIR bundle.
 """
 
-from flask import Flask, render_template
+from flask import Flask, render_template, request, jsonify
+
+from fhir_builder import build_fhir_bundle
 
 app = Flask(__name__)
 
 
 @app.route("/")
 def kiosk():
-    """The patient-facing kiosk screen. This is the only page for now."""
+    """The patient-facing kiosk screen."""
     return render_template("index.html")
+
+
+@app.route("/api/fhir-bundle", methods=["POST"])
+def fhir_bundle():
+    """
+    Day 2: takes whatever the browser captured (the flow title, age,
+    answers, red flags) and returns a real FHIR R4 Bundle built from
+    it. See fhir_builder.py for why this is hand-written rather than
+    built with a third-party library.
+    """
+    data = request.get_json(force=True) or {}
+    bundle = build_fhir_bundle(
+        flow_title=data.get("flowTitle"),
+        age=data.get("age"),
+        answers=data.get("answers", []),
+        red_flags=data.get("redFlags", []),
+    )
+    return jsonify(bundle)
 
 
 if __name__ == "__main__":

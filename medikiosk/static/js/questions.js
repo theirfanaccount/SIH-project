@@ -6,18 +6,23 @@
  * field says which node to go to after picking it -- that's the
  * whole branching mechanism. app.js (the engine) doesn't know or
  * care what the questions ARE, it just walks this structure. That
- * separation is what makes adding a new specialty later (Day 2's
- * fuller AYUSH set, or a second general complaint) a data change,
- * not a code change.
+ * separation is what makes adding today's fuller AYUSH section a
+ * data change, not a rewrite of app.js.
  *
  * Every piece of shown text is { en: "...", hi: "..." } so the whole
  * app can switch language instantly with no server round-trip.
  *
  * `redFlag: true` marks an answer that should trigger the emergency
- * banner on the summary screen (the PS's "red-flag detection"
- * requirement) -- done here as clear, explainable rules rather than
- * a black-box model, which is both safer and something you can fully
- * explain to a judge who asks "how does this actually work?"
+ * banner on the summary screen -- done as clear, explainable rules
+ * rather than a black-box model, which is safer and something you
+ * can fully explain if a judge asks "how does this actually work?"
+ *
+ * A flow can declare `physicianOnlyParams`: a list of things the
+ * summary screen should show as "assessed by the physician directly"
+ * rather than pretending the kiosk measured them. Day 1 hardcoded
+ * this only for Prakriti's own result screen; today it lives on the
+ * flow itself, so the summary screen can show it generically for any
+ * flow that declares it.
  */
 
 const FLOWS = {
@@ -91,10 +96,15 @@ const FLOWS = {
   ayush_prakriti: {
     id: "ayush_prakriti",
     title: {
-      en: "AYUSH Consultation — Prakriti Assessment",
-      hi: "आयुष परामर्श — प्रकृति परीक्षण",
+      en: "AYUSH Consultation — Dashavidha Pariksha",
+      hi: "आयुष परामर्श — दशविध परीक्षा",
     },
     start: "body_frame",
+    physicianOnlyParams: [
+      { en: "Sara (tissue quality)", hi: "सार (धातु गुणवत्ता)" },
+      { en: "Samhanana (body compactness)", hi: "संहनन (शरीर सुदृढ़ता)" },
+      { en: "Pramana (body measurements)", hi: "प्रमाण (शारीरिक माप)" },
+    ],
     nodes: {
       body_frame: {
         text: { en: "Which best describes your natural body frame?", hi: "आपकी स्वाभाविक शरीर संरचना किससे मिलती है?" },
@@ -132,7 +142,64 @@ const FLOWS = {
           { label: { en: "Withdrawn or slow to react", hi: "शांत या धीमी प्रतिक्रिया देने वाले" }, value: "kapha", next: "result" },
         ],
       },
-      result: { type: "prakriti_result" },
+      result: { type: "prakriti_result", next: "vikriti" },
+
+      vikriti: {
+        text: { en: "Right now, which of these feels most true for you?", hi: "अभी आपको इनमें से कौन-सी स्थिति सबसे सही लगती है?" },
+        type: "single",
+        options: [
+          { label: { en: "Excess gas, dryness, or restlessness", hi: "अत्यधिक गैस, रूखापन, या बेचैनी" }, value: "vata", next: "ahara_shakti" },
+          { label: { en: "Burning sensation, excess heat, or irritability", hi: "जलन, अत्यधिक गर्मी, या चिड़चिड़ापन" }, value: "pitta", next: "ahara_shakti" },
+          { label: { en: "Heaviness, congestion, or sluggishness", hi: "भारीपन, जकड़न, या सुस्ती" }, value: "kapha", next: "ahara_shakti" },
+        ],
+      },
+
+      ahara_shakti: {
+        text: { en: "How would you rate your current digestive strength?", hi: "आपकी वर्तमान पाचन शक्ति कैसी है?" },
+        type: "single",
+        options: [
+          { label: { en: "Weak — bloated or uncomfortable after small meals", hi: "कमजोर — थोड़ा खाने पर भी भारीपन या असुविधा" }, value: "weak", next: "vyayama_shakti" },
+          { label: { en: "Strong — digest most foods well", hi: "मजबूत — अधिकतर भोजन आसानी से पचता है" }, value: "strong", next: "vyayama_shakti" },
+          { label: { en: "Variable — depends on what and when I eat", hi: "परिवर्तनशील — क्या और कब खाया, इस पर निर्भर" }, value: "variable", next: "vyayama_shakti" },
+        ],
+      },
+
+      vyayama_shakti: {
+        text: { en: "How much physical exertion can you comfortably manage?", hi: "आप कितनी शारीरिक मेहनत आराम से कर सकते हैं?" },
+        type: "single",
+        options: [
+          { label: { en: "Very little — I tire quickly", hi: "बहुत कम — मैं जल्दी थक जाता/जाती हूं" }, value: "low", next: "satmya" },
+          { label: { en: "Moderate — regular daily activity is fine", hi: "मध्यम — रोज़मर्रा की गतिविधि ठीक रहती है" }, value: "moderate", next: "satmya" },
+          { label: { en: "High — I can sustain hard physical work", hi: "अधिक — मैं कठिन शारीरिक कार्य कर सकता/सकती हूं" }, value: "high", next: "satmya" },
+        ],
+      },
+
+      satmya: {
+        text: { en: "Are there specific foods, seasons, or climates that consistently disagree with you?", hi: "क्या कुछ खास भोजन, मौसम या जलवायु आपको लगातार परेशान करते हैं?" },
+        type: "single",
+        options: [
+          { label: { en: "Yes, several", hi: "हाँ, कई" }, value: "low_satmya", next: "satva" },
+          { label: { en: "A few, occasionally", hi: "कभी-कभी, कुछ" }, value: "medium_satmya", next: "satva" },
+          { label: { en: "No, I adapt well to most conditions", hi: "नहीं, मैं अधिकतर परिस्थितियों में ढल जाता/जाती हूं" }, value: "high_satmya", next: "satva" },
+        ],
+      },
+
+      satva: {
+        text: { en: "How would you describe your resilience under mental or emotional stress?", hi: "मानसिक या भावनात्मक तनाव में आपकी सहनशक्ति कैसी है?" },
+        type: "single",
+        options: [
+          { label: { en: "I get overwhelmed easily", hi: "मैं जल्दी अभिभूत हो जाता/जाती हूं" }, value: "low_satva", next: "vaya" },
+          { label: { en: "I manage reasonably well most of the time", hi: "अधिकतर समय मैं ठीक-ठाक संभाल लेता/लेती हूं" }, value: "medium_satva", next: "vaya" },
+          { label: { en: "I stay steady even under significant pressure", hi: "बड़े दबाव में भी मैं स्थिर रहता/रहती हूं" }, value: "high_satva", next: "vaya" },
+        ],
+      },
+
+      vaya: {
+        text: { en: "Finally, what is your age?", hi: "अंत में, आपकी आयु क्या है?" },
+        type: "number",
+        next: "end",
+      },
+
       end: { type: "end" },
     },
   },

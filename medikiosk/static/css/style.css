@@ -165,5 +165,85 @@ body {
   margin: 20px 0;
 }
 .note { text-align: center; color: var(--muted); margin-bottom: 28px; }
+.note--success { color: var(--teal); font-weight: 600; }
 .param-list { color: var(--muted); }
 .param-list li { margin-bottom: 6px; }
+.physician-only-title { margin-top: 32px; font-size: 17px; }
+
+/* Third mode card (document digitization) reuses .mode-card; just
+   needs its own hover accent and a 3-column layout on wide screens. */
+.mode-cards { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 760px) {
+  .mode-cards { grid-template-columns: 1fr; }
+}
+.mode-card--doc:hover { border-color: var(--muted); }
+
+/* ---------- Number input (Vaya / age) ---------- */
+.number-input {
+  width: 100%;
+  padding: 18px 20px;
+  font-size: 20px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.number-input:focus { outline: none; border-color: var(--teal); }
+
+/* ---------- Secondary button (doesn't compete with the primary action) ---------- */
+.next-btn--secondary {
+  background: white;
+  color: var(--teal);
+  border: 2px solid var(--teal);
+}
+.next-btn--secondary:hover { background: #F1F7F6; }
+
+/* ---------- Document digitization screen ---------- */
+.file-input {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+.hint { font-size: 15px; color: var(--muted); margin-bottom: 24px; }
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--teal);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 0;
+}
+
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.field-row label { font-size: 14px; color: var(--muted); font-weight: 600; }
+.field-row input {
+  padding: 12px 14px;
+  font-size: 16px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+}
+.field-row--abnormal input { border-color: var(--alert); background: var(--alert-bg); }
+.field-row--abnormal label { color: var(--alert); }
+
+.raw-text-toggle { margin: 20px 0; font-size: 14px; color: var(--muted); }
+.raw-text-toggle summary { cursor: pointer; }
+
+.fhir-block {
+  background: #12333214;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 13px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

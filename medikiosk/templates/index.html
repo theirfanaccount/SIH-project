@@ -21,6 +21,12 @@
     <main id="screen" class="screen"></main>
   </div>
 
+  <!-- Tesseract.js: runs OCR entirely in the browser (WebAssembly),
+       so an uploaded document image never has to leave the device.
+       Needs internet the first time it loads, to fetch the engine
+       and language data from this CDN. -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
   <!-- questions.js must load BEFORE app.js, since app.js uses the
        FLOWS object that questions.js defines. -->
   <script src="{{ url_for('static', filename='js/questions.js') }}"></script>

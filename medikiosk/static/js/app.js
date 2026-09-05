@@ -1,22 +1,20 @@
 /*
- * MediKiosk -- app engine (Day 1)
+ * MediKiosk -- app engine (Day 2)
  *
  * This file is the "brain" that decides which screen the patient is
- * looking at (mode select -> question flow -> summary) and how to
- * move between them. It has NO medical content of its own -- all of
- * that lives in questions.js. If you wanted to add a third flow
- * tomorrow (say, a second general complaint), you would only touch
- * questions.js, never this file. That split is deliberate: it's
- * what lets you say "our engine is reusable" on the architecture
- * slide instead of "we hardcoded one conversation."
+ * looking at and how to move between them. It has NO medical content
+ * of its own -- that lives in questions.js. New today: a "number"
+ * question type, a document-digitization screen (OCR), and a
+ * "generate FHIR bundle" action on the summary screen.
  */
 
 const state = {
-  lang: "en", // "en" or "hi" -- everything shown reads from this
-  flowId: null, // which FLOWS[...] is currently active
-  nodeId: null, // which question node within that flow we're on
-  answers: [], // [{ question, answer }] -- what we show the physician
-  redFlags: [], // labels of any answer marked redFlag: true
+  lang: "en",
+  flowId: null,
+  nodeId: null,
+  answers: [],
+  redFlags: [],
+  patientAge: null, // captured separately so the FHIR bundle can use it directly
 };
 
 const screenEl = document.getElementById("screen");
@@ -26,11 +24,9 @@ const langBtn = document.getElementById("langToggle");
 langBtn.addEventListener("click", () => {
   state.lang = state.lang === "en" ? "hi" : "en";
   langBtn.textContent = state.lang === "en" ? "हिन्दी" : "English";
-  render(); // redraw whatever screen is currently showing, in the new language
+  render();
 });
 
-// Small helper: given a {en, hi} object, return the text for the
-// current language. Falls back to English if a translation is missing.
 function t(field) {
   if (!field) return "";
   return field[state.lang] || field.en;
@@ -52,22 +48,30 @@ function showModeSelect() {
           : "शुरू करने के लिए कार्ड पर टैप करें। आप बोलकर या टैप करके जवाब दे सकते हैं।"
       }</p>
       <div class="mode-cards">
-        <button class="mode-card" data-flow="general_chest_pain" type="button">
+        <button class="mode-card" data-mode="general_chest_pain" type="button">
           <span class="mode-icon">🫀</span>
           <span class="mode-title">${state.lang === "en" ? "General Consultation" : "सामान्य परामर्श"}</span>
           <span class="mode-desc">${state.lang === "en" ? "For everyday symptoms (demo: chest pain)" : "सामान्य लक्षणों के लिए (डेमो: सीने में दर्द)"}</span>
         </button>
-        <button class="mode-card mode-card--ayush" data-flow="ayush_prakriti" type="button">
+        <button class="mode-card mode-card--ayush" data-mode="ayush_prakriti" type="button">
           <span class="mode-icon">🌿</span>
           <span class="mode-title">${state.lang === "en" ? "AYUSH Consultation" : "आयुष परामर्श"}</span>
-          <span class="mode-desc">${state.lang === "en" ? "Ayurvedic Prakriti assessment" : "आयुर्वेदिक प्रकृति परीक्षण"}</span>
+          <span class="mode-desc">${state.lang === "en" ? "Dashavidha Pariksha assessment" : "दशविध परीक्षा"}</span>
+        </button>
+        <button class="mode-card mode-card--doc" data-mode="__document__" type="button">
+          <span class="mode-icon">📄</span>
+          <span class="mode-title">${state.lang === "en" ? "Digitize a Document" : "दस्तावेज़ डिजिटाइज़ करें"}</span>
+          <span class="mode-desc">${state.lang === "en" ? "Scan a prior prescription or lab report" : "पुराना पर्चा या लैब रिपोर्ट स्कैन करें"}</span>
         </button>
       </div>
     </div>
   `;
 
   document.querySelectorAll(".mode-card").forEach((btn) => {
-    btn.addEventListener("click", () => startFlow(btn.dataset.flow));
+    btn.addEventListener("click", () => {
+      if (btn.dataset.mode === "__document__") return showDocumentUpload();
+      startFlow(btn.dataset.mode);
+    });
   });
 }
 
@@ -79,7 +83,7 @@ function startFlow(flowId) {
   render();
 }
 
-// ---------- Router: decide which screen to draw ----------
+// ---------- Router ----------
 function render() {
   if (!state.flowId) return showModeSelect();
 
@@ -87,7 +91,7 @@ function render() {
   const node = flow.nodes[state.nodeId];
 
   if (node.type === "end") return showSummary(flow);
-  if (node.type === "prakriti_result") return showPrakritiResult(flow);
+  if (node.type === "prakriti_result") return showPrakritiResult(flow, node);
 
   renderQuestion(flow, node);
 }
@@ -106,6 +110,12 @@ function renderQuestion(flow, node) {
     optionsHtml = `<div class="scale-row">${Array.from({ length: node.max - node.min + 1 }, (_, i) => node.min + i)
       .map((n) => `<button class="scale-btn" data-value="${n}" type="button">${n}</button>`)
       .join("")}</div>`;
+  } else if (node.type === "number") {
+    optionsHtml = `
+      <input id="numberInput" class="number-input" type="number" min="0" max="120"
+             inputmode="numeric" placeholder="${state.lang === "en" ? "Enter age" : "आयु दर्ज करें"}" />
+      <button id="numberNext" class="next-btn" type="button">${state.lang === "en" ? "Continue" : "आगे बढ़ें"}</button>
+    `;
   }
 
   screenEl.innerHTML = `
@@ -160,18 +170,21 @@ function renderQuestion(flow, node) {
         render();
       });
     });
+  } else if (node.type === "number") {
+    document.getElementById("numberNext").addEventListener("click", () => {
+      const val = document.getElementById("numberInput").value;
+      const num = val === "" ? null : Number(val);
+      state.answers.push({ question: t(node.text), answer: val === "" ? "—" : val });
+      if (num !== null) state.patientAge = num;
+      state.nodeId = node.next;
+      render();
+    });
   }
 }
 
 // ---------- Screen: Prakriti result (AYUSH-specific) ----------
-function showPrakritiResult(flow) {
-  // Tally how many answers pointed to each dosha. This is a simple,
-  // fully transparent count -- not a model, so you can explain
-  // exactly how the result was reached if a judge asks.
+function showPrakritiResult(flow, node) {
   const counts = { vata: 0, pitta: 0, kapha: 0 };
-  // Each single-choice answer stored its option's raw value (see
-  // renderQuestion above), so the tally is just a direct count --
-  // no re-matching or guessing which option was picked.
   state.answers.forEach((a) => {
     if (a.value && counts[a.value] !== undefined) counts[a.value]++;
   });
@@ -184,16 +197,6 @@ function showPrakritiResult(flow) {
     kapha: { en: "Kapha", hi: "कफ" },
   };
 
-  const otherParams = [
-    { en: "Vikriti (current imbalance)", hi: "विकृति (वर्तमान असंतुलन)" },
-    { en: "Sara (tissue quality)", hi: "सार (धातु गुणवत्ता)" },
-    { en: "Samhanana (body compactness)", hi: "संहनन (शरीर सुदृढ़ता)" },
-    { en: "Pramana (body measurements)", hi: "प्रमाण (शारीरिक माप)" },
-    { en: "Satmya (compatibility)", hi: "सात्म्य (अनुकूलता)" },
-    { en: "Vyayama Shakti (exercise capacity)", hi: "व्यायाम शक्ति" },
-    { en: "Vaya (age)", hi: "वय (आयु)" },
-  ];
-
   screenEl.innerHTML = `
     <div class="summary-screen">
       <h2>${state.lang === "en" ? "Preliminary Prakriti Assessment" : "प्रारंभिक प्रकृति परीक्षण"}</h2>
@@ -205,13 +208,23 @@ function showPrakritiResult(flow) {
           ? "This is a preliminary, patient-reported estimate. Your Vaidya will confirm this with direct examination (pulse, tongue, build)."
           : "यह एक प्रारंभिक, रोगी-रिपोर्टेड अनुमान है। आपके वैद्य इसे प्रत्यक्ष परीक्षण (नाड़ी, जीभ, शरीर) से पुष्ट करेंगे।"
       }</p>
-      <h3>${state.lang === "en" ? "Assessed by your physician during the full Dashavidha Pariksha:" : "पूर्ण दशविध परीक्षा के दौरान चिकित्सक द्वारा मूल्यांकित:"}</h3>
-      <ul class="param-list">${otherParams.map((p) => `<li>${t(p)}</li>`).join("")}</ul>
-      <button id="toEnd" class="next-btn" type="button">${state.lang === "en" ? "Finish" : "समाप्त करें"}</button>
+      <p class="note">${
+        state.lang === "en"
+          ? "A few more questions will complete the rest of the Dashavidha Pariksha."
+          : "कुछ और प्रश्न शेष दशविध परीक्षा को पूर्ण करेंगे।"
+      }</p>
+      <button id="toNext" class="next-btn" type="button">${state.lang === "en" ? "Continue" : "आगे बढ़ें"}</button>
     </div>
   `;
 
-  document.getElementById("toEnd").addEventListener("click", () => showSummary(flow));
+  document.getElementById("toNext").addEventListener("click", () => {
+    state.answers.push({
+      question: state.lang === "en" ? "Prakriti (constitution)" : "प्रकृति",
+      answer: t(doshaNames[dominant]),
+    });
+    state.nodeId = node.next;
+    render();
+  });
 }
 
 // ---------- Screen: final summary ----------
@@ -234,11 +247,200 @@ function showSummary(flow) {
       <dl class="summary-list">
         ${state.answers.map((a) => `<dt>${a.question}</dt><dd>${a.answer}</dd>`).join("")}
       </dl>
+      ${
+        flow.physicianOnlyParams
+          ? `<h3 class="physician-only-title">${
+              state.lang === "en" ? "Assessed by your physician directly:" : "चिकित्सक द्वारा प्रत्यक्ष रूप से मूल्यांकित:"
+            }</h3>
+             <ul class="param-list">${flow.physicianOnlyParams.map((p) => `<li>${t(p)}</li>`).join("")}</ul>`
+          : ""
+      }
+      <button id="genFhir" class="next-btn next-btn--secondary" type="button">${
+        state.lang === "en" ? "Generate ABDM-ready FHIR record" : "ABDM-तैयार FHIR रिकॉर्ड बनाएं"
+      }</button>
+      <div id="fhirOutput"></div>
       <button id="restart" class="next-btn" type="button">${state.lang === "en" ? "Done — Back to Start" : "पूर्ण — शुरुआत पर वापस जाएं"}</button>
     </div>
   `;
 
   document.getElementById("restart").addEventListener("click", showModeSelect);
+  document.getElementById("genFhir").addEventListener("click", () => generateFhirBundle(flow));
+}
+
+async function generateFhirBundle(flow) {
+  const outputEl = document.getElementById("fhirOutput");
+  outputEl.innerHTML = `<p class="note">${state.lang === "en" ? "Generating..." : "बनाया जा रहा है..."}</p>`;
+
+  try {
+    const res = await fetch("/api/fhir-bundle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        flowTitle: t(flow.title),
+        age: state.patientAge,
+        answers: state.answers,
+        redFlags: state.redFlags,
+      }),
+    });
+    if (!res.ok) throw new Error("Server returned " + res.status);
+    const bundle = await res.json();
+    outputEl.innerHTML = `
+      <p class="note">${
+        state.lang === "en"
+          ? "Sample FHIR R4 bundle (this is the data shape pushed to ABDM's Health Information Exchange):"
+          : "नमूना FHIR R4 बंडल (यह वही डेटा संरचना है जो ABDM को भेजी जाती है):"
+      }</p>
+      <pre class="fhir-block">${JSON.stringify(bundle, null, 2)}</pre>
+    `;
+  } catch (err) {
+    outputEl.innerHTML = `<p class="note">${
+      state.lang === "en" ? "Could not reach the server for this — is app.py running?" : "सर्वर से संपर्क नहीं हो सका — क्या app.py चल रहा है?"
+    }</p>`;
+  }
+}
+
+// ================================================================
+// Document digitization (OCR) screen -- separate from the question
+// flows above. Uses Tesseract.js (loaded via CDN in index.html) so
+// OCR runs fully in the browser -- no image ever leaves the device.
+// ================================================================
+
+function showDocumentUpload() {
+  screenEl.innerHTML = `
+    <div class="doc-screen">
+      <h2>${state.lang === "en" ? "Digitize a Document" : "दस्तावेज़ डिजिटाइज़ करें"}</h2>
+      <p class="subtitle">${
+        state.lang === "en"
+          ? "Upload a photo of a prescription or lab report. Processing happens on this device."
+          : "पर्चे या लैब रिपोर्ट की फोटो अपलोड करें। प्रोसेसिंग इसी डिवाइस पर होती है।"
+      }</p>
+      <input id="docFile" type="file" accept="image/*" class="file-input" />
+      <p class="hint">${
+        state.lang === "en"
+          ? "No document handy? Try the included sample:"
+          : "दस्तावेज़ नहीं है? शामिल नमूना आज़माएं:"
+      } <button id="useSample" class="link-btn" type="button">${state.lang === "en" ? "use sample prescription" : "नमूना पर्चा उपयोग करें"}</button></p>
+      <div id="docProgress"></div>
+      <div id="docResult"></div>
+      <button id="backBtn" class="back-btn" type="button">${state.lang === "en" ? "← Start over" : "← फिर से शुरू करें"}</button>
+    </div>
+  `;
+
+  document.getElementById("backBtn").addEventListener("click", showModeSelect);
+  document.getElementById("docFile").addEventListener("change", (e) => {
+    if (e.target.files[0]) runOcr(e.target.files[0]);
+  });
+  document.getElementById("useSample").addEventListener("click", () => {
+    runOcr("/static/sample_docs/sample_prescription.png");
+  });
+}
+
+async function runOcr(imageSource) {
+  const progressEl = document.getElementById("docProgress");
+  const resultEl = document.getElementById("docResult");
+  resultEl.innerHTML = "";
+  progressEl.innerHTML = `<div class="progress-bar"><div id="ocrProgressFill" class="progress-fill" style="width:0%"></div></div>
+                           <p class="note" id="ocrStatus">${state.lang === "en" ? "Starting OCR engine..." : "OCR इंजन शुरू हो रहा है..."}</p>`;
+
+  try {
+    const worker = await Tesseract.createWorker("eng", 1, {
+      logger: (m) => {
+        if (m.status && typeof m.progress === "number") {
+          document.getElementById("ocrProgressFill").style.width = Math.round(m.progress * 100) + "%";
+          document.getElementById("ocrStatus").textContent = m.status;
+        }
+      },
+    });
+    const { data } = await worker.recognize(imageSource);
+    await worker.terminate();
+
+    const extracted = extractFields(data.text);
+    renderOcrResult(data.text, extracted);
+  } catch (err) {
+    progressEl.innerHTML = "";
+    resultEl.innerHTML = `<p class="note">${state.lang === "en" ? "OCR failed to load — this needs an internet connection the first time (to fetch the OCR engine)." : "OCR लोड नहीं हो सका — पहली बार इसके लिए इंटरनेट चाहिए।"}</p>`;
+    console.error(err);
+  }
+}
+
+// Pulls a date, medicine lines, and lab values out of raw OCR text.
+// Deliberately simple, explainable pattern-matching -- not a model --
+// because every extracted field is shown to the patient/staff to
+// confirm or correct before anything is saved. That confirm step is
+// the real safety feature, not the extraction accuracy.
+function extractFields(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const result = { date: null, medicines: [], labValues: [] };
+
+  const dateRegex = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/;
+  const medRegex = /^\d*\.?\s*(Tab|Cap|Syp|Inj|Tablet|Capsule|Syrup|Injection)\.?\s+(.+)/i;
+  const labRegex = /^([A-Za-z][A-Za-z\s()]*?):\s*([\d.\/]+)\s*([A-Za-z\/%]+)?\s*(?:\(([A-Za-z]+)\))?$/;
+
+  lines.forEach((line) => {
+    if (!result.date) {
+      const d = line.match(dateRegex);
+      if (d) result.date = d[1];
+    }
+    const med = line.match(medRegex);
+    if (med) {
+      result.medicines.push(`${med[1]} ${med[2]}`.trim());
+      return;
+    }
+    const lab = line.match(labRegex);
+    if (lab && lab[3]) {
+      const status = lab[4] || null;
+      result.labValues.push({
+        name: lab[1].trim(),
+        value: lab[2],
+        unit: lab[3],
+        status,
+        abnormal: !!status && status.toLowerCase() !== "normal",
+      });
+    }
+  });
+
+  return result;
+}
+
+function renderOcrResult(rawText, extracted) {
+  document.getElementById("docProgress").innerHTML = "";
+  const resultEl = document.getElementById("docResult");
+
+  const medRows = extracted.medicines
+    .map((m, i) => `<div class="field-row"><label>${state.lang === "en" ? "Medicine" : "दवा"} ${i + 1}</label><input type="text" value="${m.replace(/"/g, "&quot;")}" /></div>`)
+    .join("") || `<p class="note">${state.lang === "en" ? "No medicines detected — you can add them manually." : "कोई दवा नहीं मिली — आप मैन्युअल रूप से जोड़ सकते हैं।"}</p>`;
+
+  const labRows = extracted.labValues
+    .map(
+      (l) => `<div class="field-row ${l.abnormal ? "field-row--abnormal" : ""}">
+                <label>${l.name}${l.abnormal ? " ⚠" : ""}</label>
+                <input type="text" value="${l.value} ${l.unit}${l.status ? " (" + l.status + ")" : ""}" />
+              </div>`
+    )
+    .join("") || `<p class="note">${state.lang === "en" ? "No lab values detected." : "कोई लैब मान नहीं मिला।"}</p>`;
+
+  resultEl.innerHTML = `
+    <h3>${state.lang === "en" ? "Confirm extracted details" : "निकाले गए विवरण की पुष्टि करें"}</h3>
+    <p class="note">${
+      state.lang === "en"
+        ? "Check every field below against the original document before saving — OCR can misread text."
+        : "सहेजने से पहले नीचे हर फ़ील्ड को मूल दस्तावेज़ से जांचें — OCR गलत पढ़ सकता है।"
+    }</p>
+    <div class="field-row"><label>${state.lang === "en" ? "Document date" : "दस्तावेज़ की तारीख"}</label><input type="text" value="${extracted.date || ""}" placeholder="${state.lang === "en" ? "not detected" : "नहीं मिली"}" /></div>
+    ${medRows}
+    ${labRows}
+    <details class="raw-text-toggle">
+      <summary>${state.lang === "en" ? "View raw OCR text" : "मूल OCR टेक्स्ट देखें"}</summary>
+      <pre class="fhir-block">${rawText.replace(/</g, "&lt;")}</pre>
+    </details>
+    <button id="confirmSave" class="next-btn" type="button">${state.lang === "en" ? "Confirm & Save to Record" : "पुष्टि करें और रिकॉर्ड में सहेजें"}</button>
+  `;
+
+  document.getElementById("confirmSave").addEventListener("click", () => {
+    resultEl.innerHTML += `<p class="note note--success">✓ ${
+      state.lang === "en" ? "Saved to this patient's timeline (demo only — Day 3 wires this into the shared record)." : "मरीज़ की समयरेखा में सहेजा गया (डेमो — यह अगले चरण में पूर्ण रिकॉर्ड से जुड़ेगा)।"
+    }</p>`;
+  });
 }
 
 // Boot the app on the mode-select screen.
